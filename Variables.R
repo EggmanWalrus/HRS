@@ -1,10 +1,6 @@
-# Section A: Demographics, Identifiers, and Weights
+source("Functions.R", local = knitr::knit_global())
 
-## Functions
-crosswave <- function(variable, n=14, m=1){
-  variable_vector <- sprintf(variable, seq(m, n))
-  return(variable_vector)
-}
+# Section A: Demographics, Identifiers, and Weights
 
 ## Identifier (Person, Household, Spouse)
 PSI <- c('HHIDPN', 'HHID', 'PN')
