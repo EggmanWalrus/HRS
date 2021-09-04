@@ -52,7 +52,7 @@ hrs_widow <- hrs %>%
   #Select cases who entered widowhood in any wave
   filter_at(vars((ends_with("MSTATH") & (starts_with("R")))),
             any_vars(.==7)) %>%
-  #Exclude cases who were widows/widowers when entering the survey
+  #Exclude cases who were widows/widowers in all waves
   filter_at(vars((ends_with("MSTATH") & (starts_with("R")))),
             any_vars(.==1))
 
@@ -80,10 +80,21 @@ hrs_widow <- hrs_widow %>%
   filter(RASPCT == 1)
 ```
 
-5. Identify the deceased spouses of the widowed
+5. Add constant and exit variables of the deceased spouse (n=3,084)
 
 ```{r}
+#Identify the deceased spouses of the widowed
+hrs_deceased <- hrs %>% 
+  filter(HHIDPN %in% hrs_widow$RASPID1)
 
+#Inner join their constant and exit variables
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_deceased %>% 
+               select("HHIDPN", all_of(RA), all_of(Exit)) %>% 
+               rename("SHHIDPN" = HHIDPN) %>% 
+               #Rename variables names starting with R to S
+               rename_with(~gsub("^R", "S", .x)),
+             by=c("RASPID1"="SHHIDPN"))
 ```
 
 

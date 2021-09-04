@@ -184,5 +184,6 @@ WorkYears <- c(crosswave('R%dJYEARS'),
 Employment <- c(Labor, Unemployed, Wage, WorkYears)
 
 # All Variables
+RA <- c('RABYEAR', 'RADYEAR', 'RAGENDER', 'RARACEM', 'RAEDYRS', 'RARELIG', 'RAVETRN', 'RABPLACE')
 Exit <- c('REOOPMD', 'REHIGOV', 'REGOVMR', 'REGOVMDS', 'REGOVVA', 'REHILTC' )
 Variables <- c(Demographics, Health, Family, Retire, Insurance, Employment)
