@@ -97,6 +97,126 @@ hrs_widow <- hrs_widow %>%
              by=c("RASPID1"="SHHIDPN"))
 ```
 
+6. Add variables:
+    * RDAge, SDAge (lifespan)
+    * FirstWave (first wave in interview)
+    * FirstWaveM (first wave with a married status)
+    * LastWave (last wave in interview)
+    * WidowWave (first wave widowed after marriage)
+    * WidowAge (age at widowhood after marriage)
+    * MarryAge (age at the start of the current marriage)
+
+```{r}
+#Add the age of death of both the widowed and the deceased (n=3.059)
+hrs_widow <- hrs_widow %>% 
+  mutate(RDAge = RADYEAR - RABYEAR,
+         SDAge = SADYEAR - SABYEAR) %>% 
+  #Exclude cases with the spouse missing death year
+  filter(!is.na(SDAge))
+
+attr(hrs_widow$RDAge, "label") <- "RDAge: R death age"
+attr(hrs_widow$SDAge, "label") <- "SDAge: S death age"
+
+#Add LastWave
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_widow %>% 
+               select("HHIDPN", crosswave('R%dMSTATH')) %>% 
+               pivot_longer(cols = 2:15,
+                            names_to = "Wave",
+                            values_to = "Status") %>% 
+               group_by(HHIDPN) %>% 
+               #Find the last occurrence of a valid marital status
+               mutate(Last = last(Wave[!is.na(Status)])) %>% 
+               filter(Wave == Last) %>% 
+               mutate(Last = as.numeric(str_extract(Last, "[[:digit:]]+"))) %>% 
+               rename("LastWave" = Last) %>% 
+               select(HHIDPN, LastWave),
+             by="HHIDPN")
+
+attr(hrs_widow$LastWave, "label") <- "LastWave: R Last wave in survey"
+
+#Add FirstWave
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_widow %>% 
+               select("HHIDPN", crosswave('R%dMSTATH')) %>%
+               pivot_longer(cols = 2:15,
+                            names_to = "Wave",
+                            values_to = "Status") %>% 
+               group_by(HHIDPN) %>% 
+               #Find the first occurrence of a valid marital status
+               mutate(First = first(Wave[!is.na(Status)])) %>% 
+               filter(Wave == First) %>% 
+               mutate(First = as.numeric(str_extract(First, "[[:digit:]]+"))) %>% 
+               rename("FirstWave" = First) %>% 
+               select(HHIDPN, FirstWave),
+             by="HHIDPN")
+
+attr(hrs_widow$FirstWave, "label") <- "FirstWave: R first wave in survey"
+
+#Add FirstWaveM
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_widow %>% 
+                select("HHIDPN", crosswave('R%dMSTATH')) %>%
+                pivot_longer(cols = 2:15,
+                             names_to = "Wave",
+                             values_to = "Status") %>% 
+                group_by(HHIDPN) %>%
+                filter(!is.na(Status)) %>% 
+                #Find the first occurrence of a married status
+                mutate(First = first(Wave[Status==1])) %>% 
+                filter(Wave == First) %>% 
+                mutate(First = as.numeric(str_extract(First, "[[:digit:]]+"))) %>% 
+                rename("FirstWaveM" = First) %>% 
+                select(HHIDPN, FirstWaveM),
+              by="HHIDPN")
+
+attr(hrs_widow$FirstWaveM, "label") <- "FirstWaveM: R first wave married"
+
+#Add WidowWave
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_widow %>% 
+               select("HHIDPN", crosswave('R%dMSTATH')) %>%
+               pivot_longer(cols = 2:15,
+                            names_to = "Wave",
+                            values_to = "Status") %>% 
+               group_by(HHIDPN) %>%
+               filter(!is.na(Status)) %>% 
+               #Find the last occurrence of a married status
+               mutate(Last = last(Wave[Status==1])) %>% 
+               filter(Wave == Last) %>% 
+               #The next wave of the last married status is the first wave widowed
+               mutate(Last = as.numeric(str_extract(Last, "[[:digit:]]+")) + 1) %>% 
+               rename("WidowWave" = Last) %>% 
+               select(HHIDPN, WidowWave),
+             by="HHIDPN")
+
+attr(hrs_widow$WidowWave, "label") <- "WidowWave: R first wave widowed"
+
+#Add WidowAge
+hrs_widow <- hrs_widow %>% 
+  mutate(WidowAge = SADYEAR - RABYEAR)
+
+attr(hrs_widow$WidowAge, "label") <- "WidowAge: R age widowed"
+
+#Add MarryLength, MarryAge (n=3,025)
+hrs_widow <- hrs_widow %>% 
+  inner_join(hrs_widow %>% 
+               select("HHIDPN", crosswave('R%dMCURLN')) %>% 
+               pivot_longer(cols = -1,
+                            names_to = "Wave",
+                            values_to = "Years") %>% 
+               group_by(HHIDPN) %>% 
+               mutate(Last = last(Wave[!is.na(Years)])) %>% 
+               filter(Wave == Last) %>% 
+               rename("MarryLength" = Years) %>% 
+               select(HHIDPN, MarryLength),
+             by="HHIDPN") %>%
+  mutate(MarryAge = WidowAge - MarryLength)
+
+attr(hrs_widow$MarryLength, "label") <- "MarryLength: R current marriage length"
+attr(hrs_widow$MarryAge, "label") <- "MarryAge: R age start of current marriage"
+```
+
 
 
 
