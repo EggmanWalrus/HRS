@@ -1,22 +1,11 @@
----
-title: "Data Preparation"
-author: "Yanwen Wang"
-date: "9/2/2021"
-output: github_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-#Run scripts
-source("Variables.R", local = knitr::knit_global())
-source("Functions.R", local = knitr::knit_global())
-source("Inflation.R", local = knitr::knit_global())
-```
+Data Preparation
+================
+Yanwen Wang
+9/2/2021
 
 # Import libraries and the HRS dataset
 
-```{r, warning=FALSE, message=FALSE}
+``` r
 library(tidyverse)
 options(dplyr.summarise.inform = FALSE)
 library(haven)
@@ -28,9 +17,10 @@ hrs <- read_sav("randhrs1992_2018v1.sav") %>%
 
 # Clean the dataset
 
-1. Exclude respondents who didn't respond but alive in any wave (n=28,561)
+1.  Exclude respondents who didn’t respond but alive in any wave
+    (n=28,561)
 
-```{r}
+``` r
 hrs <- hrs %>% 
   #Exclude cases with no response but alive
   filter_at(vars(ends_with("IWSTAT")), all_vars(.!=4)) %>% 
@@ -38,17 +28,18 @@ hrs <- hrs %>%
   filter_at(vars(ends_with("IWSTAT")), all_vars(.!=9))
 ```
 
-2. Exclude respondents and spouses with discrepant marital status in any wave (n=27,406)
+2.  Exclude respondents and spouses with discrepant marital status in
+    any wave (n=27,406)
 
-```{r}
+``` r
 hrs <- hrs %>% 
   #Exclude cases with discrepant marital status
   filter_at(vars(ends_with("MSTATF")), all_vars(!(. %in% seq(2, 6))))
 ```
 
-3. Select respondents who have married and then widowed (n=3,366)
+3.  Select respondents who have married and then widowed (n=3,366)
 
-```{r}
+``` r
 hrs_widow <- hrs %>% 
   #Select cases with marital history of only marriage and widowhood
   filter_at(vars((ends_with("MSTATH") & (starts_with("R")))),
@@ -76,17 +67,17 @@ hrs_diemarried <- hrs_widow %>%
 hrs_widow <- hrs_widow[!(hrs_widow$HHIDPN %in% hrs_diemarried$HHIDPN), ]
 ```
 
-4. Exclude cases with multiple deceased spouses (n=3,243)
+4.  Exclude cases with multiple deceased spouses (n=3,243)
 
-```{r}
+``` r
 hrs_widow <- hrs_widow %>% 
   #Select cases with only one spouse in all waves
   filter(RASPCT == 1)
 ```
 
-5. Add constant and exit variables of the deceased spouse (n=3,084)
+5.  Add constant and exit variables of the deceased spouse (n=3,084)
 
-```{r}
+``` r
 #Identify the deceased spouses of the widowed
 hrs_deceased <- hrs %>% 
   filter(HHIDPN %in% hrs_widow$RASPID1)
@@ -101,17 +92,17 @@ hrs_widow <- hrs_widow %>%
              by=c("RASPID1"="SHHIDPN"))
 ```
 
-6. Add variables:
-    * RDAge, SDAge (lifespan)
-    * FirstWave (first wave in interview)
-    * FirstWaveM (first wave with a married status)
-    * LastWave (last wave in interview)
-    * WidowWave (first wave widowed after marriage)
-    * WidowAge (age at widowhood after marriage)
-    * MarryLength (length of the current marriage)
-    * MarryAge (age at the start of the current marriage)
+6.  Add variables:
+    -   RDAge, SDAge (lifespan)
+    -   FirstWave (first wave in interview)
+    -   FirstWaveM (first wave with a married status)
+    -   LastWave (last wave in interview)
+    -   WidowWave (first wave widowed after marriage)
+    -   WidowAge (age at widowhood after marriage)
+    -   MarryLength (length of the current marriage)
+    -   MarryAge (age at the start of the current marriage)
 
-```{r}
+``` r
 #Add the age of death of both the widowed and the deceased (n=3.059)
 hrs_widow <- hrs_widow %>% 
   mutate(RDAge = RADYEAR - RABYEAR,
@@ -226,76 +217,8 @@ attr(hrs_widow$MarryAge, "label") <- "MarryAge: R age start of current marriage"
 
 ## Health expenditure before and after the loss of a spouse (unstandardized)
 
-```{r, warning=FALSE, message=FALSE, echo=FALSE}
-#Health expenditure before and after the loss of a spouse
-hrs_widow %>% 
-  select(HHIDPN, crosswave('R%dOOPMD', 14, 3)) %>% 
-  pivot_longer(cols = -1,
-               names_to = "Wave",
-               values_to = "OOPM") %>% 
-  mutate(Wave = as.numeric(str_extract(Wave, "[[:digit:]]+"))) %>% 
-  left_join(hrs_widow %>% select(HHIDPN, WidowWave),
-            by="HHIDPN") %>% 
-  #Adjust for inflation
-  left_join(yearly_cpi %>% select(wave, adj_factor),
-            by=c("Wave"="wave")) %>% 
-  mutate(OOPMadjusted = OOPM*adj_factor,
-         OOPMadjusted_yearly = OOPMadjusted/2,
-         #Set the WidowWave as 0
-         Wave_relative = Wave - WidowWave,
-         Year_relative = Wave_relative * 2) %>% 
-  group_by(Year_relative) %>% 
-  summarise(OOPMA = mean(OOPMadjusted_yearly, na.rm=TRUE)) %>% 
-  
-  ggplot(aes(Year_relative, OOPMA)) +
-    geom_line() + 
-    geom_point() +
-    scale_x_continuous(breaks = seq(-22, 24, by = 2)) + 
-    scale_y_continuous(breaks = seq(0, 5000, by=500)) + 
-    geom_vline(xintercept = 0, color="grey") +
-    labs(x="Years before and after loss of a spouse",
-         y="Yearly out-of-pocket medical expenditure, inflation adjusted") +
-    theme_classic()
-
-#Health expenditure before and after the loss of a spouse, male and female
-hrs_widow %>% 
-  select(HHIDPN, RAGENDER, WidowAge,
-         crosswave('R%dOOPMD', 14, 3)) %>% 
-  pivot_longer(cols = -c(1:3),
-               names_to = "Wave",
-               values_to = "OOPM") %>% 
-  mutate(Wave = as.numeric(str_extract(Wave, "[[:digit:]]+"))) %>% 
-  left_join(hrs_widow %>% select(HHIDPN, WidowWave),
-            by="HHIDPN") %>% 
-  left_join(yearly_cpi %>% select(wave, adj_factor),
-            by=c("Wave"="wave")) %>% 
-  mutate(OOPMadjusted = OOPM*adj_factor,
-         OOPMadjusted_yearly = OOPMadjusted/2,
-         Wave_relative = Wave - WidowWave,
-         Year_relative = Wave_relative * 2) %>% 
-  group_by(Year_relative, RAGENDER) %>% 
-  summarise(OOPMA = mean(OOPMadjusted_yearly, na.rm=TRUE)) %>% 
-  mutate(RAGENDER = as.numeric(RAGENDER),
-         RAGENDER = if_else(RAGENDER==1, "male", "female")) %>% 
-  
-  ggplot(aes(Year_relative, OOPMA)) +
-    geom_line() + 
-    geom_point() +
-    scale_x_continuous(breaks = seq(-22, 26, by = 4)) + 
-    scale_y_continuous(breaks = seq(0, 5000, by=500)) + 
-    geom_vline(xintercept = 0, color="grey") +
-    labs(x="Years before and after loss of a spouse",
-         y="Yearly out-of-pocket medical expenditure, inflation adjusted") +
-    facet_wrap(~RAGENDER) +
-    theme_classic()
-```
+![](data_preparation_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-8-2.png)<!-- -->
 
 # Models
 
 ## Linear mixed model
-
-```{r}
-
-```
-
-
