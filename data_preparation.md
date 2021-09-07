@@ -10,6 +10,11 @@ library(tidyverse)
 options(dplyr.summarise.inform = FALSE)
 library(haven)
 library(lubridate)
+library(MASS)
+library(car)
+
+select <- dplyr::select
+theme_set(theme_classic())
 
 hrs <- read_sav("randhrs1992_2018v1.sav") %>% 
   select(all_of(Variables))
@@ -213,11 +218,43 @@ attr(hrs_widow$MarryLength, "label") <- "MarryLength: R current marriage length"
 attr(hrs_widow$MarryAge, "label") <- "MarryAge: R age start of current marriage"
 ```
 
+7.  Transform dataset with relevant variables into a long format
+
+``` r
+hrs_widowL <- hrs_widow %>% 
+  select(all_of(Variables_sorted)) %>% 
+  pivot_longer(cols = -c("HHIDPN":"SEHILTC"),
+               names_to = c(".value", "Wave", ".value"),
+               names_pattern = "([a-z+A-Z+]+)([0-9]+)([a-z+A-Z+]+)") %>% 
+  mutate(Wave = as.numeric(Wave)) %>% 
+  relocate(Wave, .after=RASPID1) %>% 
+  group_by(HHIDPN) %>% 
+  arrange(Wave, .by_group=TRUE) %>% 
+  ungroup()
+```
+
+8.  Adjust for inflation, add OOPMDy (yearly data), WidowWaveR and
+    WidowYearR
+
+``` r
+hrs_widowL <-  hrs_widowL %>% 
+  left_join(yearly_cpi %>% select(wave, adj_factor),
+            by=c("Wave"="wave")) %>% 
+  mutate_at(Variables_inflation, .funs = funs(. * adj_factor)) %>% 
+  #Add OOPMD yearly, WidowWaveR and WidowYearR
+  mutate(ROOPMDy = ROOPMD/2,
+         SOOPMDy = SOOPMD/2,
+         #Set the WidowWave as 0
+         WidowWaveR = Wave - WidowWave,
+         WidowYearR = WidowWaveR*2) %>% 
+  relocate(c("WidowWaveR", "WidowYearR"), .after = WidowWave)
+```
+
 # Descriptive Analysis
 
 ## Health expenditure before and after the loss of a spouse (unstandardized)
 
-![](data_preparation_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-8-2.png)<!-- -->
+![](data_preparation_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-10-3.png)<!-- -->
 
 # Models
 

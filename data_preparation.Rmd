@@ -21,6 +21,11 @@ library(tidyverse)
 options(dplyr.summarise.inform = FALSE)
 library(haven)
 library(lubridate)
+library(MASS)
+library(car)
+
+select <- dplyr::select
+theme_set(theme_classic())
 
 hrs <- read_sav("randhrs1992_2018v1.sav") %>% 
   select(all_of(Variables))
@@ -222,72 +227,84 @@ attr(hrs_widow$MarryLength, "label") <- "MarryLength: R current marriage length"
 attr(hrs_widow$MarryAge, "label") <- "MarryAge: R age start of current marriage"
 ```
 
+7. Transform dataset with relevant variables into a long format
+
+```{r}
+hrs_widowL <- hrs_widow %>% 
+  select(all_of(Variables_sorted)) %>% 
+  pivot_longer(cols = -c("HHIDPN":"SEHILTC"),
+               names_to = c(".value", "Wave", ".value"),
+               names_pattern = "([a-z+A-Z+]+)([0-9]+)([a-z+A-Z+]+)") %>% 
+  mutate(Wave = as.numeric(Wave)) %>% 
+  relocate(Wave, .after=RASPID1) %>% 
+  group_by(HHIDPN) %>% 
+  arrange(Wave, .by_group=TRUE) %>% 
+  ungroup()
+```
+
+8. Adjust for inflation, add OOPMDy (yearly data), WidowWaveR and WidowYearR
+
+```{r, warning=FALSE, message=FALSE}
+hrs_widowL <-  hrs_widowL %>% 
+  left_join(yearly_cpi %>% select(wave, adj_factor),
+            by=c("Wave"="wave")) %>% 
+  mutate_at(Variables_inflation, .funs = funs(. * adj_factor)) %>% 
+  #Add OOPMD yearly, WidowWaveR and WidowYearR
+  mutate(ROOPMDy = ROOPMD/2,
+         SOOPMDy = SOOPMD/2,
+         #Set the WidowWave as 0
+         WidowWaveR = Wave - WidowWave,
+         WidowYearR = WidowWaveR*2) %>% 
+  relocate(c("WidowWaveR", "WidowYearR"), .after = WidowWave)
+```
+
 # Descriptive Analysis
 
 ## Health expenditure before and after the loss of a spouse (unstandardized)
 
 ```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#Distribution of health expenditure before and after the loss of a spouse
+hrs_widowL %>% 
+  ggplot(aes(as.factor(WidowYearR), log(ROOPMDy))) +
+    geom_boxplot(outlier.alpha = 0.1) + 
+    geom_jitter(size = 0.1, alpha = 0.2) + 
+    labs(x="Years before and after loss of a spouse",
+         y="Yearly OOP medical expenditure, log, inflation-adjusted")
+
 #Health expenditure before and after the loss of a spouse
-hrs_widow %>% 
-  select(HHIDPN, crosswave('R%dOOPMD', 14, 3)) %>% 
-  pivot_longer(cols = -1,
-               names_to = "Wave",
-               values_to = "OOPM") %>% 
-  mutate(Wave = as.numeric(str_extract(Wave, "[[:digit:]]+"))) %>% 
-  left_join(hrs_widow %>% select(HHIDPN, WidowWave),
-            by="HHIDPN") %>% 
-  #Adjust for inflation
-  left_join(yearly_cpi %>% select(wave, adj_factor),
-            by=c("Wave"="wave")) %>% 
-  mutate(OOPMadjusted = OOPM*adj_factor,
-         OOPMadjusted_yearly = OOPMadjusted/2,
-         #Set the WidowWave as 0
-         Wave_relative = Wave - WidowWave,
-         Year_relative = Wave_relative * 2) %>% 
-  group_by(Year_relative) %>% 
-  summarise(OOPMA = mean(OOPMadjusted_yearly, na.rm=TRUE)) %>% 
+hrs_widowL %>% 
+  group_by(WidowYearR) %>% 
+  summarise(ROOPMDa = mean(ROOPMDy, na.rm=TRUE)) %>% 
+  drop_na(ROOPMDa) %>% 
   
-  ggplot(aes(Year_relative, OOPMA)) +
+  ggplot(aes(WidowYearR, ROOPMDa)) + 
     geom_line() + 
     geom_point() +
-    scale_x_continuous(breaks = seq(-22, 24, by = 2)) + 
-    scale_y_continuous(breaks = seq(0, 5000, by=500)) + 
+    scale_x_continuous(breaks = seq(-24, 24, by = 2)) + 
+    scale_y_continuous(limits = c(0, NA),
+                       expand = expansion(mult = c(0, 0.1))) + 
     geom_vline(xintercept = 0, color="grey") +
     labs(x="Years before and after loss of a spouse",
-         y="Yearly out-of-pocket medical expenditure, inflation adjusted") +
-    theme_classic()
+         y="Yearly OOP medical expenditure, inflation adjusted")
 
 #Health expenditure before and after the loss of a spouse, male and female
-hrs_widow %>% 
-  select(HHIDPN, RAGENDER, WidowAge,
-         crosswave('R%dOOPMD', 14, 3)) %>% 
-  pivot_longer(cols = -c(1:3),
-               names_to = "Wave",
-               values_to = "OOPM") %>% 
-  mutate(Wave = as.numeric(str_extract(Wave, "[[:digit:]]+"))) %>% 
-  left_join(hrs_widow %>% select(HHIDPN, WidowWave),
-            by="HHIDPN") %>% 
-  left_join(yearly_cpi %>% select(wave, adj_factor),
-            by=c("Wave"="wave")) %>% 
-  mutate(OOPMadjusted = OOPM*adj_factor,
-         OOPMadjusted_yearly = OOPMadjusted/2,
-         Wave_relative = Wave - WidowWave,
-         Year_relative = Wave_relative * 2) %>% 
-  group_by(Year_relative, RAGENDER) %>% 
-  summarise(OOPMA = mean(OOPMadjusted_yearly, na.rm=TRUE)) %>% 
+hrs_widowL %>% 
+  group_by(WidowYearR, RAGENDER) %>% 
+  summarise(ROOPMDa = mean(ROOPMDy, na.rm=TRUE)) %>% 
+  drop_na(ROOPMDa) %>% 
   mutate(RAGENDER = as.numeric(RAGENDER),
          RAGENDER = if_else(RAGENDER==1, "male", "female")) %>% 
   
-  ggplot(aes(Year_relative, OOPMA)) +
+  ggplot(aes(WidowYearR, ROOPMDa)) + 
     geom_line() + 
     geom_point() +
     scale_x_continuous(breaks = seq(-22, 26, by = 4)) + 
-    scale_y_continuous(breaks = seq(0, 5000, by=500)) + 
+    scale_y_continuous(limits = c(0, NA),
+                       expand = expansion(mult = c(0, 0.1))) + 
     geom_vline(xintercept = 0, color="grey") +
     labs(x="Years before and after loss of a spouse",
-         y="Yearly out-of-pocket medical expenditure, inflation adjusted") +
-    facet_wrap(~RAGENDER) +
-    theme_classic()
+         y="Yearly OOP medical expenditure, inflation adjusted") +
+    facet_wrap(~RAGENDER)
 ```
 
 # Models
@@ -297,5 +314,6 @@ hrs_widow %>%
 ```{r}
 
 ```
+
 
 
