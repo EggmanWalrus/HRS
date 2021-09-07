@@ -183,10 +183,9 @@ Employment <- c(Labor, Unemployed, Wage, WorkYears)
 RA <- c('RABYEAR', 'RADYEAR', 'RAGENDER', 'RARACEM', 'RAEDYRS', 'RARELIG', 'RAVETRN', 'RABPLACE')
 Exit <- c('REOOPMD', 'REHIGOV', 'REGOVMR', 'REGOVMDS', 'REGOVVA', 'REHILTC' )
 Variables <- c(Demographics, Health, Family, Retire, Income, Wealth, Insurance, Employment)
-
 Variables_sorted <- c("HHIDPN", "RASPID1",
                       "FirstWave", "LastWave", "FirstWaveM",
-                      "WidowWave", "WidowAge",
+                      "WidowWave", "WidowAge", "MarryLength", "MarryAge",
                       "HACOHORT",
                       "RDAge", "SDAge",
                       "RABYEAR", "SABYEAR",
@@ -219,3 +218,7 @@ Variables_sorted <- c("HHIDPN", "RASPID1",
                       Family, Retire,
                       Employment
                       )
+Variables_inflation <- c("REOOPMD", "SEOOPMD", "ROOPMD", "SOOPMD",
+                         "HATOTA", "HATOTN",
+                         "RIEARN", "SIEARN", "HITOT",
+                         "RWGIHR", "SWGIHR")
