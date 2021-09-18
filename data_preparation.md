@@ -322,7 +322,7 @@ hrs_widowL <- hrs_widowL %>%
 hrs_widowL <- hrs_widowL %>% 
   rowwise() %>% 
   mutate(RRatio = ROOPMDy / RITOT,
-         HRatio = sum(ROOPMDy, SOOPMDy, na.rm = TRUE) / sum(RITOT, SITOT, na.rm = TRUE))
+         HRatio = sum(ROOPMDy, SOOPMDy, na.rm = TRUE) / HITOT)
 
 hrs_widowL$HRatio[is.na(hrs_widowL$ROOPMDy) & is.na(hrs_widowL$SOOPMDy)] <- NA
 
@@ -331,9 +331,11 @@ hrs_widowL <- hrs_widowL %>%
   mutate(RCHE_income = cut(RRatio,
                            breaks = c(-Inf, 0.1, Inf),
                            labels = c(0, 1)),
+         RCHE_income = as.numeric(as.character(RCHE_income)),
          HCHE_income = cut(HRatio,
                            breaks = c(-Inf, 0.1, Inf),
-                           labels = c(0, 1)))
+                           labels = c(0, 1)),
+         HCHE_income = as.numeric(as.character(HCHE_income)))
 ```
 
 ``` r
@@ -343,7 +345,8 @@ hrs_widowL <- hrs_widowL %>%
   mutate(HRatioC = sum(ROOPMDy, SOOPMDy, na.rm = TRUE) / HCTOTC,
          HCHE_C = cut(HRatioC,
                       breaks = c(-Inf, 0.1, Inf),
-                      labels = c(0, 1)))
+                      labels = c(0, 1)),
+         HCHE_C = as.numeric(as.character(HCHE_C)))
 ```
 
 # Descriptive Analysis
@@ -354,50 +357,134 @@ hrs_widowL <- hrs_widowL %>%
 
 ## CHE before and after the loss of a spouse
 
+``` r
+#CHE based on household income
+hrs_widowL %>% 
+  filter((WidowYearR >= -16) & (WidowYearR <= 16)) %>% 
+  ungroup() %>% 
+  group_by(WidowYearR) %>% 
+  summarise(HCHE_income = mean(HCHE_income, na.rm=TRUE)) %>% 
+  drop_na(HCHE_income) %>% 
+  
+  ggplot(aes(WidowYearR, HCHE_income)) + 
+    geom_line() + 
+    geom_point() + 
+    scale_x_continuous(breaks = seq(-16, 16, by = 2)) + 
+    scale_y_continuous(labels = scales::percent) + 
+    geom_vline(xintercept = 0, color="grey") +
+    labs(title = "Risk of CHE Based on Household Income",
+         x="Years before and after loss of a spouse",
+         y="Likelihood of CHE based on household income")
+```
+
+![](data_preparation_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+
+``` r
+#CHE based on respondent income
+hrs_widowL %>% 
+  filter((WidowYearR >= -16) & (WidowYearR <= 16)) %>% 
+  ungroup() %>% 
+  group_by(WidowYearR) %>% 
+  summarise(RCHE_income = mean(RCHE_income, na.rm=TRUE)) %>% 
+  drop_na(RCHE_income) %>% 
+  
+  ggplot(aes(WidowYearR, RCHE_income)) + 
+    geom_line() + 
+    geom_point() + 
+    scale_x_continuous(breaks = seq(-16, 16, by = 2)) + 
+    scale_y_continuous(labels = scales::percent) + 
+    geom_vline(xintercept = 0, color="grey") +
+    labs(title = "Risk of CHE Based on Widoer's Income",
+         x="Years before and after loss of a spouse",
+         y="Likelihood of CHE based on respondent's income")
+```
+
+![](data_preparation_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
+
+``` r
+#CHE based on respondent income by gender
+hrs_widowL %>% 
+  filter((WidowYearR >= -16) & (WidowYearR <= 16)) %>% 
+  ungroup() %>% 
+  group_by(WidowYearR, RAGENDER) %>% 
+  summarise(RCHE_income = mean(RCHE_income, na.rm=TRUE)) %>% 
+  drop_na(RCHE_income) %>% 
+  mutate(RAGENDER = as.numeric(RAGENDER),
+         RAGENDER = if_else(RAGENDER==1, "male", "female")) %>% 
+  
+  ggplot(aes(WidowYearR, RCHE_income)) + 
+    geom_line() + 
+    geom_point() + 
+    scale_x_continuous(breaks = seq(-16, 16, by = 2)) + 
+    scale_y_continuous(labels = scales::percent) + 
+    geom_vline(xintercept = 0, color="grey") +
+    labs(title = "Risk of CHE Based on Widoer's Income, by gender",
+         x="Years before and after loss of a spouse",
+         y="Likelihood of CHE based on respondent's income") +
+    facet_wrap(~RAGENDER)
+```
+
+![](data_preparation_files/figure-gfm/unnamed-chunk-15-3.png)<!-- -->
+
+``` r
+#CHE based on consumption
+hrs_widowL %>% 
+  filter((WidowYearR >= -16) & (WidowYearR <= 16)) %>% 
+  ungroup() %>% 
+  group_by(WidowYearR) %>% 
+  summarise(HCHE_C = mean(HCHE_C, na.rm = TRUE)) %>% 
+  drop_na(HCHE_C) %>% 
+  
+  ggplot(aes(WidowYearR, HCHE_C)) + 
+    geom_line() + 
+    geom_point() + 
+    scale_x_continuous(breaks = seq(-16, 16, by = 2)) + 
+    scale_y_continuous(labels = scales::percent) + 
+    geom_vline(xintercept = 0, color="grey") +
+    labs(title = "Risk of CHE Based on Household Consumption",
+         x="Years before and after loss of a spouse",
+         y="Likelihood of CHE based on household consumption")
+```
+
+![](data_preparation_files/figure-gfm/unnamed-chunk-15-4.png)<!-- -->
+
 # Models
 
 ## Linear mixed model
 
 ``` r
-lmm <- lmer(ROOPMDy ~ WidowYearR + (1|RAGENDER) + (1|RARACEM) + (1|RUNEMP), 
+lmm <- lmer(RCHE_income ~ WidowYearR + (1|RAGENDER) + (1|RARACEM) + (1|RUNEMP), 
             data=hrs_widowL)
-```
-
-    ## boundary (singular) fit: see ?isSingular
-
-``` r
 summary(lmm)
 ```
 
     ## Linear mixed model fit by REML ['lmerMod']
-    ## Formula: ROOPMDy ~ WidowYearR + (1 | RAGENDER) + (1 | RARACEM) + (1 |  
+    ## Formula: RCHE_income ~ WidowYearR + (1 | RAGENDER) + (1 | RARACEM) + (1 |  
     ##     RUNEMP)
     ##    Data: hrs_widowL
     ## 
-    ## REML criterion at convergence: 117565.2
+    ## REML criterion at convergence: 6186.2
     ## 
     ## Scaled residuals: 
-    ##    Min     1Q Median     3Q    Max 
-    ## -0.416 -0.249 -0.167  0.001 33.546 
+    ##     Min      1Q  Median      3Q     Max 
+    ## -0.9904 -0.5861 -0.5104 -0.3396  2.1924 
     ## 
     ## Random effects:
-    ##  Groups   Name        Variance Std.Dev.
-    ##  RARACEM  (Intercept)   105807  325.3  
-    ##  RUNEMP   (Intercept)        0    0.0  
-    ##  RAGENDER (Intercept)    53168  230.6  
-    ##  Residual             34792370 5898.5  
-    ## Number of obs: 5820, groups:  RARACEM, 3; RUNEMP, 2; RAGENDER, 2
+    ##  Groups   Name        Variance  Std.Dev.
+    ##  RARACEM  (Intercept) 0.0001872 0.01368 
+    ##  RUNEMP   (Intercept) 0.0095385 0.09767 
+    ##  RAGENDER (Intercept) 0.0033440 0.05783 
+    ##  Residual             0.1700496 0.41237 
+    ## Number of obs: 5776, groups:  RARACEM, 3; RUNEMP, 2; RAGENDER, 2
     ## 
     ## Fixed effects:
-    ##             Estimate Std. Error t value
-    ## (Intercept)  1596.86     286.15   5.580
-    ## WidowYearR     19.69       9.37   2.101
+    ##               Estimate Std. Error t value
+    ## (Intercept)  0.2453190  0.0820805   2.989
+    ## WidowYearR  -0.0022307  0.0006573  -3.394
     ## 
     ## Correlation of Fixed Effects:
     ##            (Intr)
-    ## WidowYearR 0.159 
-    ## optimizer (nloptwrap) convergence code: 0 (OK)
-    ## boundary (singular) fit: see ?isSingular
+    ## WidowYearR 0.041
 
 ``` r
 Anova(lmm)
@@ -405,8 +492,8 @@ Anova(lmm)
 
     ## Analysis of Deviance Table (Type II Wald chisquare tests)
     ## 
-    ## Response: ROOPMDy
-    ##            Chisq Df Pr(>Chisq)  
-    ## WidowYearR 4.416  1     0.0356 *
+    ## Response: RCHE_income
+    ##             Chisq Df Pr(>Chisq)    
+    ## WidowYearR 11.518  1  0.0006892 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
