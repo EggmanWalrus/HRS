@@ -12,15 +12,40 @@ library(haven)
 library(lubridate)
 library(MASS)
 library(car)
+library(lme4)
 
 select <- dplyr::select
 theme_set(theme_classic())
 
 hrs <- read_sav("randhrs1992_2018v1.sav") %>% 
   select(all_of(Variables))
+cam <- read_sav("randcams_2001_2017v1.sav") %>% 
+  select(all_of(VariablesC))
 ```
 
-# Clean the dataset
+# Clean the CAM dataset
+
+``` r
+#Select variables of consumption and transform into a long format
+cam <- cam %>% 
+  select("HHIDPN", all_of(Consumption)) %>% 
+  pivot_longer(cols = -c("HHIDPN"),
+               names_to = c(".value", "Wave", ".value"),
+               names_pattern = "([a-z+A-Z+]+)([0-9]+)([a-z+A-Z+]+)") %>% 
+  mutate(Wave = as.numeric(Wave)) %>% 
+  group_by(HHIDPN) %>% 
+  arrange(Wave, .by_group = TRUE) %>% 
+  ungroup()
+
+#Adjust for inflation
+cam <- cam %>% 
+  left_join(yearly_cpi %>% select(wave, adj_factor),
+            by=c("Wave"="wave")) %>% 
+  mutate(HCTOTC = HCTOTC * adj_factor) %>% 
+  select(HHIDPN, Wave, HCTOTC)
+```
+
+# Clean the HRS dataset
 
 1.  Exclude respondents who didn’t respond but alive in any wave
     (n=28,561)
@@ -233,8 +258,8 @@ hrs_widowL <- hrs_widow %>%
   ungroup()
 ```
 
-8.  Adjust for inflation, add OOPMDy (yearly data), WidowWaveR and
-    WidowYearR
+8.  Adjust for inflation, add (H)OOPMDy (yearly data), R/S total income,
+    WidowWaveR and WidowYearR
 
 ``` r
 hrs_widowL <-  hrs_widowL %>% 
@@ -248,14 +273,140 @@ hrs_widowL <-  hrs_widowL %>%
          WidowWaveR = Wave - WidowWave,
          WidowYearR = WidowWaveR*2) %>% 
   relocate(c("WidowWaveR", "WidowYearR"), .after = WidowWave)
+
+#Fix ROOPMDy and SOOPMD in wave 2, since it's in previous 12 months
+hrs_widowL[hrs_widowL$Wave==2, "ROOPMDy"] <- hrs_widowL[hrs_widowL$Wave==2, "ROOPMDy"] * 2
+hrs_widowL[hrs_widowL$Wave==2, "SOOPMDy"] <- hrs_widowL[hrs_widowL$Wave==2, "SOOPMDy"] * 2
+
+#Calculate household out-of-pocket medical expenditure
+hrs_widowL <- hrs_widowL %>% 
+  rowwise() %>% 
+  mutate(HOOPMDy = sum(ROOPMDy, SOOPMDy, na.rm = TRUE),
+         HOOPMD = sum(ROOPMD, SOOPMD, na.rm = TRUE))
+
+hrs_widowL$HOOPMD[is.na(hrs_widowL$ROOPMD) & is.na(hrs_widowL$SOOPMD)] <- NA
+hrs_widowL$HOOPMDy[is.na(hrs_widowL$ROOPMDy) & is.na(hrs_widowL$SOOPMDy)] <- NA
+
+#Calculate respondent's total income (the last calender year)
+hrs_widowL <- hrs_widowL %>% 
+  rowwise() %>% 
+  mutate(RITOT = sum(RIEARN, RIPENA, RISSDI, RISRET, RIUNWC, RIGXFR, na.rm = TRUE),
+         SITOT = sum(SIEARN, SIPENA, SISSDI, SISRET, SIUNWC, SIGXFR, na.rm = TRUE))
+
+hrs_widowL$RITOT[is.na(hrs_widowL$RIEARN) & is.na(hrs_widowL$RIPENA) & is.na(hrs_widowL$RISSDI)
+                 & is.na(hrs_widowL$RISRET) & is.na(hrs_widowL$RIUNWC) & is.na(hrs_widowL$RIGXFR)] <- NA
+hrs_widowL$SITOT[is.na(hrs_widowL$SIEARN) & is.na(hrs_widowL$SIPENA) & is.na(hrs_widowL$SISSDI)
+                 & is.na(hrs_widowL$SISRET) & is.na(hrs_widowL$SIUNWC) & is.na(hrs_widowL$SIGXFR)] <- NA
+```
+
+# Calculate Catastrophic Health Expenditure
+
+1.  Join two datasets
+
+``` r
+#Join two datasets
+hrs_widowL <- hrs_widowL %>% 
+  left_join(cam, by = c("HHIDPN", "Wave"))
+```
+
+2.  Calculate catastrophic health expenditure
+    1.  Ratio of out-of-pocket medical expenditure and income
+        (household/respondent)
+    2.  Ratio of out-of-pocket medical expenditure and total consumption
+        (household)
+    3.  CHE based on income (categorical)
+    4.  CHE based on consumption (categorical)
+
+``` r
+#Calculate ratio of OOPMD and income (H/R)
+hrs_widowL <- hrs_widowL %>% 
+  rowwise() %>% 
+  mutate(RRatio = ROOPMDy / RITOT,
+         HRatio = sum(ROOPMDy, SOOPMDy, na.rm = TRUE) / sum(RITOT, SITOT, na.rm = TRUE))
+
+hrs_widowL$HRatio[is.na(hrs_widowL$ROOPMDy) & is.na(hrs_widowL$SOOPMDy)] <- NA
+
+#Calculate CHE: 10% of total income (H/R)
+hrs_widowL <- hrs_widowL %>% 
+  mutate(RCHE_income = cut(RRatio,
+                           breaks = c(-Inf, 0.1, Inf),
+                           labels = c(0, 1)),
+         HCHE_income = cut(HRatio,
+                           breaks = c(-Inf, 0.1, Inf),
+                           labels = c(0, 1)))
+```
+
+``` r
+#Calculate ratio of OOPMD and consumption (H); CHE (10% of consumption H)
+hrs_widowL <- hrs_widowL %>% 
+  rowwise() %>% 
+  mutate(HRatioC = sum(ROOPMDy, SOOPMDy, na.rm = TRUE) / HCTOTC,
+         HCHE_C = cut(HRatioC,
+                      breaks = c(-Inf, 0.1, Inf),
+                      labels = c(0, 1)))
 ```
 
 # Descriptive Analysis
 
-## Health expenditure before and after the loss of a spouse (unstandardized)
+## Health expenditure before and after the loss of a spouse
 
-![](data_preparation_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-10-3.png)<!-- -->
+![](data_preparation_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-14-2.png)<!-- -->![](data_preparation_files/figure-gfm/unnamed-chunk-14-3.png)<!-- -->
+
+## CHE before and after the loss of a spouse
 
 # Models
 
 ## Linear mixed model
+
+``` r
+lmm <- lmer(ROOPMDy ~ WidowYearR + (1|RAGENDER) + (1|RARACEM) + (1|RUNEMP), 
+            data=hrs_widowL)
+```
+
+    ## boundary (singular) fit: see ?isSingular
+
+``` r
+summary(lmm)
+```
+
+    ## Linear mixed model fit by REML ['lmerMod']
+    ## Formula: ROOPMDy ~ WidowYearR + (1 | RAGENDER) + (1 | RARACEM) + (1 |  
+    ##     RUNEMP)
+    ##    Data: hrs_widowL
+    ## 
+    ## REML criterion at convergence: 117565.2
+    ## 
+    ## Scaled residuals: 
+    ##    Min     1Q Median     3Q    Max 
+    ## -0.416 -0.249 -0.167  0.001 33.546 
+    ## 
+    ## Random effects:
+    ##  Groups   Name        Variance Std.Dev.
+    ##  RARACEM  (Intercept)   105807  325.3  
+    ##  RUNEMP   (Intercept)        0    0.0  
+    ##  RAGENDER (Intercept)    53168  230.6  
+    ##  Residual             34792370 5898.5  
+    ## Number of obs: 5820, groups:  RARACEM, 3; RUNEMP, 2; RAGENDER, 2
+    ## 
+    ## Fixed effects:
+    ##             Estimate Std. Error t value
+    ## (Intercept)  1596.86     286.15   5.580
+    ## WidowYearR     19.69       9.37   2.101
+    ## 
+    ## Correlation of Fixed Effects:
+    ##            (Intr)
+    ## WidowYearR 0.159 
+    ## optimizer (nloptwrap) convergence code: 0 (OK)
+    ## boundary (singular) fit: see ?isSingular
+
+``` r
+Anova(lmm)
+```
+
+    ## Analysis of Deviance Table (Type II Wald chisquare tests)
+    ## 
+    ## Response: ROOPMDy
+    ##            Chisq Df Pr(>Chisq)  
+    ## WidowYearR 4.416  1     0.0356 *
+    ## ---
+    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
