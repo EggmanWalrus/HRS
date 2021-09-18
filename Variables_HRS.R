@@ -114,12 +114,22 @@ Wealth <- c(TWealth, TNHWealth)
 
 # Section E: Income
 
-## Individual Earnings; Total Household Income
+## Individual Earnings; Total Household Income (R+S only)
 IEarn <- c(crosswave('R%dIEARN'),
            crosswave('S%dIEARN'))
+IPENA <- c(crosswave('R%dIPENA'),
+           crosswave('S%dIPENA'))
+ISSDI <- c(crosswave('R%dISSDI'),
+           crosswave('S%dISSDI'))
+ISRET <- c(crosswave('R%dISRET'),
+           crosswave('S%dISRET'))
+IUNWC <- c(crosswave('R%dIUNWC'),
+           crosswave('S%dIUNWC'))
+IGXFR <- c(crosswave('R%dIGXFR'),
+           crosswave('S%dIGXFR'))
 HIncome <- c(crosswave('H%dITOT'))
 
-Income <- c(IEarn, HIncome)
+Income <- c(IEarn, HIncome, IPENA, ISSDI, ISRET, IUNWC, IGXFR)
 
 # Section H: Health Insurance
 
@@ -221,4 +231,7 @@ Variables_sorted <- c("HHIDPN", "RASPID1",
 Variables_inflation <- c("REOOPMD", "SEOOPMD", "ROOPMD", "SOOPMD",
                          "HATOTA", "HATOTN",
                          "RIEARN", "SIEARN", "HITOT",
+                         "RIPENA", "SIPENA", "RISSDI", "SISSDI",
+                         "RISRET", "SISRET", "RIUNWC", "SIUNWC",
+                         "RIGXFR", "SIGXFR",
                          "RWGIHR", "SWGIHR")
